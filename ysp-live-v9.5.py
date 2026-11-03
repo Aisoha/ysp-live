@@ -1,3 +1,23 @@
+# ==========================================
+# 额外补丁：强制 Python 仅使用 IPv4 解析，彻底解决 [Errno 101] Network unreachable
+# ==========================================
+import socket
+
+old_getaddrinfo = socket.getaddrinfo
+
+
+def new_getaddrinfo(*args, **kwargs):
+  # 强制将 IPv6 请求重定向到 IPv4，避免软路由/Docker 的 IPv6 路由不可达
+  if kwargs.get('family') == socket.AF_INET6:
+    kwargs['family'] = socket.AF_INET
+  elif len(args) >= 3 and args[2] == socket.AF_INET6:
+    args = list(args)
+    args[2] = socket.AF_INET
+  return old_getaddrinfo(*args, **kwargs)
+
+
+socket.getaddrinfo = new_getaddrinfo
+# ==========================================
 from __future__ import annotations 
 import argparse 
 import atexit 
