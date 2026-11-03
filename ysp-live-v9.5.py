@@ -33,12 +33,12 @@ import urllib .request
 import uuid 
 from collections import deque 
 urllib .request .install_opener (urllib .request .build_opener (urllib .request .ProxyHandler ({}))) 
-__version__ ='9.5.0'
-AUTHOR_COMMUNITY ='https://t.me/garysclub'
-AUTHOR_CHANNEL ='https://t.me/garysclubchannel'
-AUTHOR_NOTICE =f'''📢 首发地址
-社区：Gary's Club ({AUTHOR_COMMUNITY})
-频道：Gary's Club Channel ({AUTHOR_CHANNEL})
+__version__ ='9.5.1'
+AUTHOR_COMMUNITY ='https://t.me/+rgxyQeDLtjcxM2U1'
+AUTHOR_CHANNEL ='https://t.me/tmxktg'
+AUTHOR_NOTICE =f'''📢 公告
+社区：大亨分享 ({AUTHOR_COMMUNITY})
+频道：TMXKの分享 ({AUTHOR_CHANNEL})
 ⚠️ 其他任何分发渠道均非作者本人！'''
 AK ='9f5c54c4ed0e50109b800f7e28fec205'
 RSA_PUBLIC_KEY_B64 ='MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAkKeLy4ywWLSnBkwRyqYgF3HMIj05V5uuh5HjyEsZOWnu1NHu3jPQv3sr32wwQNYv5qapsNXmNgLUDHtgHZxqPQAYXltjSRc0qhcD286t62wOIHId8zXS3s1Jy4rgU4qjQWzI9rp/1sE0pMsmwTaJa4zuJ5iz8VwF8Av5oJ1k+HxY+/HLnjNlW1hmWLpuDYmkZYuAoTHa1VGeHQh9FEKI8ZcL3GTQphShUoC+Kg3P1hGUVTtCYapmzPS5lkAdwebuzwvTCfGiTErYZCnPBUSeV7BVlgjtLYIi29KvF0a8FHsJMfe/UdHcyW/RihsIYOtDQcRRpFGXyPXbVrzFJse24QIDAQAB'
@@ -265,6 +265,48 @@ def log (msg ,min_interval =0.0 ):
         line ='[%s] %s'%(time .strftime ('%H:%M:%S'),clean_msg )
         global_log_ring .append (line )
     print (line ,flush =True )
+
+# ==========================================
+# 优化补丁：抗 DNS 抖动网络请求 & 后台任务抢占（插队）机制
+# ==========================================
+def robust_urlopen(url_or_req, data=None, headers=None, timeout=6, max_retries=2):
+    """带智能重试与 DNS 抖动过滤的网络请求封装，彻底消灭 [Errno -3]"""
+    for attempt in range(max_retries + 1):
+        try:
+            if isinstance(url_or_req, urllib.request.Request):
+                return urllib.request.urlopen(url_or_req, timeout=timeout)
+            else:
+                req_headers = headers if headers is not None else {}
+                req = urllib.request.Request(url_or_req, data=data, headers=req_headers)
+                return urllib.request.urlopen(req, timeout=timeout)
+        except Exception as e:
+            err_str = str(e).lower()
+            if any(k in err_str for k in ("-3", "getaddrinfo", "temporary failure", "timed out", "connection reset")):
+                if attempt < max_retries:
+                    time.sleep(0.2 * (attempt + 1))
+                    continue
+            raise e
+
+_active_prefetch_events = {}
+_prefetch_lock = threading.Lock()
+
+def acquire_prefetch_preemption(channel_name: str) -> threading.Event:
+    """换台插队抢占：立即中断其他频道的后台高码率预取，瞬间释放并发池"""
+    with _prefetch_lock:
+        for ch, event in list(_active_prefetch_events.items()):
+            if ch != channel_name:
+                event.set()
+                log(f"[{ch}] 收到新换台插队请求，已抢占并中断其后台预取", min_interval=2.0)
+        cancel_event = threading.Event()
+        _active_prefetch_events[channel_name] = cancel_event
+        return cancel_event
+
+def release_prefetch_preemption(channel_name: str):
+    """清理后台预取状态"""
+    with _prefetch_lock:
+        _active_prefetch_events.pop(channel_name, None)
+# ==========================================
+
 def java_string_hashcode (value :str )->int :
     h =0 
     for ch in value :
@@ -764,7 +806,7 @@ class HttpClient :
             req .add_header (k ,v )
         try :
             try :
-                with self ._opener .open (req ,timeout =self ._timeout )as resp :
+                with robust_urlopen (req ,timeout =self ._timeout )as resp :
                     status =resp .status 
                     reason =resp .reason or ''
                     hdrs ={k .lower ():v for k ,v in resp .headers .items ()}
@@ -1039,11 +1081,21 @@ class Resolver :
                 return True 
             return False 
     def _zap_resolve_worker (self ,channel :str ,gen :int ,delay :float ):
-        time .sleep (delay )
+        cancel_event = acquire_prefetch_preemption(channel)
+        step = 0.2
+        waited = 0.0
+        while waited < delay:
+            if cancel_event.is_set():
+                release_prefetch_preemption(channel)
+                return
+            time.sleep(step)
+            waited += step
+
         now =now_f64 ()
         with self .state_lock :
             if gen !=self .state .zap_generations .get (channel ,0 ):
                 self .state .zap_pending_channels .discard (channel )
+                release_prefetch_preemption(channel)
                 return 
             last_acc =self .state .channel_last_access .get (channel ,0.0 )
             if (now -last_acc >max (delay +2.0 ,12.0 ))or (self .state .zap_channel !=channel and now -last_acc >5.0 ):
@@ -1051,13 +1103,18 @@ class Resolver :
                 self .state .zap_times .pop (channel ,None )
                 if self .state .zap_pending ==channel :
                     self .state .zap_pending =''
+                release_prefetch_preemption(channel)
                 return 
         try :
+            if cancel_event.is_set():
+                release_prefetch_preemption(channel)
+                return
             self .ensure_channel (channel ,force =True )
             log (f'[{channel }] 高码率后台预取完成, 继续停留将自动升级',min_interval =10.0 )
         except Exception as e :
             log (f'[{channel }] 高码率后台预取失败: {e }, 继续 1080p',min_interval =10.0 )
         finally :
+            release_prefetch_preemption(channel)
             with self .state_lock :
                 self .state .zap_pending_channels .discard (channel )
                 if self .state .zap_pending ==channel :
@@ -2194,7 +2251,7 @@ def jce_timeshift_url (pid ,sid ,start ,end ,stream ='fhd'):
     packet =_wrap (CMD ,body ,reqid )
     req =urllib .request .Request ('https://jacc.ysp.cctv.cn',data =packet ,method ='POST')
     req .add_header ('Content-Type','application/octet-stream')
-    with urllib .request .urlopen (req ,timeout =15 )as resp :
+    with robust_urlopen (req ,timeout =15 )as resp :
         raw =resp .read ()
     resp_body =_unwrap (raw )
     if not resp_body :
@@ -2272,7 +2329,7 @@ def bk_playurls (channel_id ,live_pid ,defn ='fhd'):
     t =_ckey (channel_id )
     q =urllib .parse .urlencode ({'atime':'120','livepid':live_pid ,'cnlid':channel_id ,'appVer':_CK_APPVER ,'app_version':'300090','caplv':'1','cmd':'2','defn':defn ,'device':'iPhone','encryptVer':'4.2','getpreviewinfo':'0','hevclv':'0','lang':'zh-Hans_CN','livequeue':'0','logintype':'1','nettype':'1','newnettype':'1','newplatform':str (_CK_PLATFORM ),'platform':str (_CK_PLATFORM ),'sdtfrom':'v3021','spacode':'23','spaudio':'1','spdemuxer':'6','spdrm':'2','spdynamicrange':'1','spflv':'1','spflvaudio':'1','sphdrfps':'60','sphttps':'1','spvcode':_BK_H264 ,'spvideo':'4','stream':'1','system':'1','sysver':'ios18.2.1','uhd_flag':'0','cKey':t ['cKey'],'guid':t ['guid'],'fntick':str (t ['ts']),'flowid':t ['flowId'],'playbacktime':'0'})
     req =urllib .request .Request ('https://bkliveinfo.ysp.cctv.cn/?'+q ,headers ={'User-Agent':'qqlive','Accept':'application/json'})
-    with urllib .request .urlopen (req ,timeout =5 )as r :
+    with robust_urlopen (req ,timeout =5 )as r :
         p =json .loads (r .read ().decode ())
     if int (p .get ('iretcode',-1 ))!=0 :
         raise RuntimeError ('iretcode=%s %s'%(p .get ('iretcode'),p .get ('errinfo','')))
@@ -2292,7 +2349,7 @@ def bk_playurls (channel_id ,live_pid ,defn ='fhd'):
     return urls 
 def fetch_abs_playlist (url ,depth =0 ):
     req =urllib .request .Request (url ,headers ={'User-Agent':'qqlive','Referer':'https://live.cctv.cn/','Accept':'application/vnd.apple.mpegurl,application/json,*/*'})
-    with urllib .request .urlopen (req ,timeout =10 )as r :
+    with robust_urlopen (req ,timeout =10 )as r :
         text =r .read ().decode ('utf-8','replace')
         final =r .geturl ()
     if depth <2 :
@@ -2667,7 +2724,7 @@ def jce_fetch (ch ):
     now =int (time .time ())
     m3u8_url =jce_timeshift_url (ch .pid ,ch .sid ,now -WINDOW ,now ,ch .defn )
     req =urllib .request .Request (m3u8_url ,headers ={'User-Agent':UA })
-    with urllib .request .urlopen (req ,timeout =20 )as r :
+    with robust_urlopen (req ,timeout =20 )as r :
         text =r .read ().decode ('utf-8','replace')
     segs ,dur ,pdt =([],6.0 ,'')
     for line in text .splitlines ():
@@ -2943,7 +3000,7 @@ def fetch_upstream_engine_playlist (canonical :str ,host :str ,proto :str ='http
     for u in (f'http://127.0.0.1:{engine_port }/live/{canonical }.m3u8',f'http://127.0.0.1:{engine_port }/{canonical }.m3u8'):
         try :
             req =urllib .request .Request (u ,headers ={'User-Agent':UA })
-            with urllib .request .urlopen (req ,timeout =10.0 )as resp :
+            with robust_urlopen (req ,timeout =10.0 )as resp :
                 if resp .status ==200 :
                     text =resp .read ().decode ('utf-8',errors ='ignore')
                     if '#EXTM3U'in text :
@@ -2966,7 +3023,7 @@ def fetch_upstream_engine_playlist (canonical :str ,host :str ,proto :str ='http
             pass 
     return None 
 class Handler (BaseHTTPRequestHandler ):
-    server_version ='ysp-live/9.5.0'
+    server_version ='ysp-live/9.5.1'
     def log_message (self ,fmt ,*args ):
         pass 
     def _send (self ,code ,body ,ctype ='text/plain; charset=utf-8',head_only =False ,extra_headers =None ):
@@ -3018,7 +3075,7 @@ class Handler (BaseHTTPRequestHandler ):
             active_slots =len ([s for s in (resolver .state .sessions .values ()if resolver else [])if s and resolver .app_session_fresh (s )])
             health_data ={
             "ok":True ,
-            "version":"9.5.0",
+            "version":"9.5.1",
             "author_community":AUTHOR_COMMUNITY ,
             "author_channel":AUTHOR_CHANNEL ,
             "notice":"其他渠道均非作者发布！",
@@ -3070,7 +3127,7 @@ class Handler (BaseHTTPRequestHandler ):
             info =[]
             now =time .time ()
             info .append ("====================================================")
-            info .append (f"ysp-live v9.5 诊断报告 (运行时间: {int (now -server_start_time )}s)")
+            info .append (f"ysp-live v9.5.1 诊断报告 (运行时间: {int (now -server_start_time )}s)")
             info .append ("📢 首发地址")
             info .append (f"社区：Gary's Club ({AUTHOR_COMMUNITY})")
             info .append (f"频道：Gary's Club Channel ({AUTHOR_CHANNEL})")
@@ -3225,7 +3282,7 @@ class Handler (BaseHTTPRequestHandler ):
                 return 
             try :
                 req =urllib .request .Request (target ,headers ={'User-Agent':UA ,'Accept':'*/*'})
-                with urllib .request .urlopen (req ,timeout =10.0 )as resp :
+                with robust_urlopen (req ,timeout =10.0 )as resp :
                     data =resp .read (35 *1024 *1024 +1 )
                     if len (data )>35 *1024 *1024 :
                         self ._send (502 ,'upstream segment too large\n',head_only =head_only )
@@ -3412,7 +3469,7 @@ def main ():
     global resolver ,server_port ,engine_port ,global_channel_dir ,global_ts_cache 
     if os.name == 'nt':
         os.system('') 
-    ap =argparse .ArgumentParser (description ='央视频全频道直播代理（ysp-live v9.5）')
+    ap =argparse .ArgumentParser (description ='央视频全频道直播代理（ysp-live v9.5.1）')
     ap .add_argument ('port',nargs ='?',type =int ,default =8767 ,help ='监听端口 (默认 8767)')
     ap .add_argument ('--bind',default ='0.0.0.0',help ='监听地址 (默认 0.0.0.0)')
     ap .add_argument ('--data-dir',default =os .environ .get ('YSP_DATA_DIR',''),help ='数据持久化目录 (默认由 YSP_DATA_DIR 环境变量或脚本所在目录决定)')
@@ -3484,7 +3541,7 @@ def main ():
     RESET = '\033[0m'
 
     log ('====================================================================')
-    log (f'ysp-live v9.5 启动成功: {channels_count } 个独立频道 (央视 {c_yangshi } 路, 卫视 {c_weishi } 路)')
+    log (f'ysp-live v9.5.1 启动成功: {channels_count } 个独立频道 (央视 {c_yangshi } 路, 卫视 {c_weishi } 路)')
     log (f'全频道订阅:   http://localhost:{args .port }/all.m3u')
     log (f'系统健康度:   http://localhost:{args .port }/health')
     log (f'实时诊断日志: http://localhost:{args .port }/diag')
