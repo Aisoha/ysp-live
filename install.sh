@@ -22,7 +22,7 @@ fi
 
 mkdir -p "$STAGE_DIR" "$INSTALL_DIR"
 echo "[1/4] 下载 GitHub 最新源码..."
-wget -q --show-progress "$ZIP_URL" -O "$STAGE_DIR/source.zip"
+wget -q "$ZIP_URL" -O "$STAGE_DIR/source.zip"
 unzip -q "$STAGE_DIR/source.zip" -d "$STAGE_DIR"
 SOURCE_DIR="$STAGE_DIR/ysp-live-main"
 [ -f "$SOURCE_DIR/ysp-live-v9.6.py" ] || { echo "[错误] 下载包中缺少 ysp-live-v9.6.py"; exit 1; }
