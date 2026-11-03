@@ -8,7 +8,8 @@
 
 - **🌐 极致网络兼容（Host 模式）**：放弃传统的 Bridge 桥接网络，直接复用宿主机网络栈，彻底告别“无视频、连接超时、组播不通”等玄学问题。
 - **🛡️ 稳定 DNS 容灾**：内置多线公共 DNS 强制指定，彻底解决软路由环境下常见的域名解析抖动与 `[Errno -3]` 报错。
-- **⚡ V8 内存深度调优**：针对 Node.js 运行时进行垃圾回收（GC）与老生代内存限制，长期运行不溢出、切台丝滑。
+- **⚡ 解析耗时诊断**：记录 live_v1_01、live_v1_02、VDN 三个上游阶段耗时，便于定位高码率慢在哪里。
+- **🎞️ 画质档位选择**：优先选择项目已有明确识别的 36p / 10p 档位，未知档位保留上游顺序。
 - **🤖 智能一键部署**：内置智能检测脚本，自动识别运行状态，避免重复部署，让小白也能秒级上手。
 - **📦 极简轻量化**：基于 Alpine Linux 基础镜像构建，资源占用极低，稳定运行不卡顿。
 - **💾 数据持久化**：支持挂载本地存储，配置与核心数据实时保存，容器更新升级不丢数据。
@@ -23,7 +24,7 @@
 sh -c "$(wget -O- https://raw.githubusercontent.com/tmxk2020/ysp-live/main/install.sh)"
 ```
 
-> *注：脚本会自动检测容器运行状态。若已运行会友好提示；若未部署或需更新，会自动拉取最新源码并完成清理重建。*
+> *注：脚本会自动检测容器运行状态。若已运行会友好提示；若未部署或需更新，会自动拉取最新源码并完成升级；新版安装脚本会保留 data 目录。*
 
 ---
 
@@ -36,11 +37,11 @@ sh -c "$(wget -O- https://raw.githubusercontent.com/tmxk2020/ysp-live/main/insta
 ```yaml
 services:
   ysp-live:
-    image: ysp-live:9.5
+    image: ysp-live:9.6
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: ysp-live-v9.5
+    container_name: ysp-live-v9.6
     restart: unless-stopped
     network_mode: host
     dns:
@@ -75,7 +76,7 @@ docker compose up -d --build
 - **原因**：本地已经存在同名的旧容器未清理。
 - **解决办法**：
   ```bash
-  docker rm -f ysp-live-v9.5
+  docker rm -f ysp-live-v9.6
   docker compose up -d
   ```
 

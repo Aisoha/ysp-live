@@ -1,40 +1,55 @@
 #!/bin/sh
+set -eu
 
-CONTAINER_NAME="ysp-live-v9.5"
+CONTAINER_NAME="ysp-live-v9.6"
+OLD_CONTAINER_NAME="ysp-live-v9.5"
 INSTALL_DIR="/root/ysp-live"
+STAGE_DIR="/root/ysp-live-update.$$"
+ZIP_URL="https://github.com/tmxk2020/ysp-live/archive/refs/heads/main.zip"
 
-echo "========================================="
-echo "  开始检查 ysp-live 部署状态..."
-echo "========================================="
+cleanup() { rm -rf "$STAGE_DIR"; }
+trap cleanup EXIT INT TERM
 
-# 1. 智能检测：如果容器已经在运行，直接提示并退出
-if [ "$(docker ps -q -f name=${CONTAINER_NAME})" ]; then
-    echo "[提示] 检测到 ysp-live 容器已经在运行中，无需重复部署！"
-    echo "[信息] 如需强制重新部署，请先执行: docker rm -f ${CONTAINER_NAME}"
-    exit 0
+command -v docker >/dev/null 2>&1 || { echo "[错误] 未安装 Docker"; exit 1; }
+docker compose version >/dev/null 2>&1 || { echo "[错误] 当前 Docker 未安装 Compose 插件"; exit 1; }
+command -v wget >/dev/null 2>&1 || { echo "[错误] 未安装 wget"; exit 1; }
+command -v unzip >/dev/null 2>&1 || { echo "[错误] 未安装 unzip"; exit 1; }
+
+if [ "$(docker ps -q -f "name=^/${CONTAINER_NAME}$")" ]; then
+  echo "[提示] ysp-live v9.6 已在运行，无需重复部署。"
+  exit 0
 fi
 
-# 2. 如果容器曾经存在但停止了，或者目录不存在，开始全新部署
-echo "[提示] 未检测到正在运行的 ysp-live 实例，开始自动部署..."
+mkdir -p "$STAGE_DIR" "$INSTALL_DIR"
+echo "[1/4] 下载 GitHub 最新源码..."
+wget -q --show-progress "$ZIP_URL" -O "$STAGE_DIR/source.zip"
+unzip -q "$STAGE_DIR/source.zip" -d "$STAGE_DIR"
+SOURCE_DIR="$STAGE_DIR/ysp-live-main"
+[ -f "$SOURCE_DIR/ysp-live-v9.6.py" ] || { echo "[错误] 下载包中缺少 ysp-live-v9.6.py"; exit 1; }
+[ -f "$SOURCE_DIR/Dockerfile" ] || { echo "[错误] 下载包中缺少 Dockerfile"; exit 1; }
 
-# 清理并创建工作目录
-rm -rf ${INSTALL_DIR}
-mkdir -p ${INSTALL_DIR} && cd ${INSTALL_DIR}
+# 先备份 data，再覆盖程序文件，防止升级清空设备身份和缓存状态。
+if [ -d "$INSTALL_DIR/data" ]; then
+  cp -a "$INSTALL_DIR/data" "$STAGE_DIR/data-backup"
+fi
+echo "[2/4] 更新程序文件（保留 data 数据）..."
+cp -R "$SOURCE_DIR/." "$INSTALL_DIR/"
+if [ -d "$STAGE_DIR/data-backup" ]; then
+  rm -rf "$INSTALL_DIR/data"
+  mv "$STAGE_DIR/data-backup" "$INSTALL_DIR/data"
+else
+  mkdir -p "$INSTALL_DIR/data"
+fi
 
-# 下载最新源码
-echo "[1/3] 正在从 GitHub 下载最新源码..."
-wget --no-check-certificate https://github.com/tmxk2020/ysp-live/archive/refs/heads/main.zip -O ysp-live.zip
-unzip -q ysp-live.zip
-cd ysp-live-main
+cd "$INSTALL_DIR"
+echo "[3/4] 构建 v9.6 镜像..."
+docker compose build
 
-#清理旧容器残留（防冲突）
-docker rm -f ${CONTAINER_NAME} 2>/dev/null
+docker rm -f "$OLD_CONTAINER_NAME" >/dev/null 2>&1 || true
+docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+docker compose up -d --force-recreate
 
-# 构建并后台启动
-echo "[2/3] 正在构建 Docker 镜像并启动容器..."
-docker compose up -d --build
-
-echo "========================================="
-echo "[3/3] ysp-live 部署成功！"
-echo "访问地址: http://<你的软路由IP>:8767/all.m3u"
-echo "========================================="
+echo "[4/4] 部署完成！"
+echo "访问地址: http://<服务器IP>:8767/all.m3u"
+echo "诊断地址: http://<服务器IP>:8767/diag"
+echo "数据目录: $INSTALL_DIR/data（升级时保留）"
