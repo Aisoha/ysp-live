@@ -1,26 +1,26 @@
 services:
   ysp-live:
-    image: ysp-live:9.6
+    image: ysp-live:9.5
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: ysp-live-v9.6
+    container_name: ysp-live-v9.5
     restart: unless-stopped
     network_mode: host
     dns:
-      - 223.5.5.5
-      - 119.29.29.29
-      - 1.1.1.1
+      - 223.5.5.5     # 阿里 DNS（国内解析极快）
+      - 119.29.29.29  # 腾讯 DNS
+      - 1.1.1.1       # 国际备用
     volumes:
       - ./data:/app/data
     environment:
       - TZ=Asia/Shanghai
       - PYTHONUNBUFFERED=1
       - YSP_DATA_DIR=/app/data
-      - YSP_ZAP_DEBOUNCE=1.5
-      - NODE_OPTIONS=--max-old-space-size=256
+      - YSP_ZAP_DEBOUNCE=1.5  # 👈 新增：将换台防抖缩短为 1.5 秒（切台 1.5 秒后自动升至高码率/高帧率）
+      - NODE_OPTIONS="--max-old-space-size=256 --optimize-for-size"  # 👈 新增：优化 V8 内存与垃圾回收，防止切台时卡顿
     logging:
-      driver: json-file
+      driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
