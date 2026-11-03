@@ -3546,9 +3546,9 @@ def main ():
     log (f'系统健康度:   http://localhost:{args .port }/health')
     log (f'实时诊断日志: http://localhost:{args .port }/diag')
     log (f'{RED_BOLD}--------------------------------------------------------------------{RESET}')
-    log (f'{RED_BOLD}📢 首发地址{RESET}')
-    log (f'{RED_BOLD}社区：Gary\'s Club ({AUTHOR_COMMUNITY}){RESET}')
-    log (f'{RED_BOLD}频道：Gary\'s Club Channel ({AUTHOR_CHANNEL}){RESET}')
+    log (f'{RED_BOLD}📢 公告{RESET}')
+    log (f'{RED_BOLD}社区：大亨分享 ({AUTHOR_COMMUNITY}){RESET}')
+    log (f'{RED_BOLD}频道：TMXKの分享 ({AUTHOR_CHANNEL}){RESET}')
     log (f'{RED_BOLD}⚠️ 其他任何分发渠道均非作者本人！{RESET}')
     log (f'{RED_BOLD}===================================================================={RESET}')
     try :
