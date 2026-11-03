@@ -3519,7 +3519,7 @@ def main ():
     host =args .bind ,port =args .port ,timeout =float (args .timeout ),insecure_tls =False ,cache_ttl =60.0 ,
     stale_while_refresh_ttl =0.0 ,refresh_error_cooldown =5.0 ,playlist_cache_ttl =2.0 ,
     background_refresh_queue_limit =4 ,http_workers =16 ,http_queue_limit =1000 ,
-    identity_reset_error_threshold =0 ,identity_reset_cooldown =300.0 ,refresh_interval =1.0 ,
+    identity_reset_error_threshold =0 ,identity_reset_cooldown =300.0 ,refresh_interval =0.2 ,
     control_step_jitter_min_ms =0 ,control_step_jitter_max_ms =0 ,heartbeat_interval =30.0 ,
     heartbeat_ttl_guard =60.0 ,session_ttl =7200.0 ,
     meta_json =os .path .join (data_dir ,'proxy-cache-state-rs.json'),

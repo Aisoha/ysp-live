@@ -17,7 +17,7 @@ services:
       - TZ=Asia/Shanghai
       - PYTHONUNBUFFERED=1
       - YSP_DATA_DIR=/app/data
-      - YSP_ZAP_DEBOUNCE=3.0  # 👈 新增：将换台防抖缩短为 3 秒（切台 3 秒后自动升至高码率/高帧率）
+      - YSP_ZAP_DEBOUNCE=1.5  # 👈 新增：将换台防抖缩短为 1.5 秒（切台 1.5 秒后自动升至高码率/高帧率）
       - NODE_OPTIONS="--max-old-space-size=256 --optimize-for-size"  # 👈 新增：优化 V8 内存与垃圾回收，防止切台时卡顿
     logging:
       driver: "json-file"
