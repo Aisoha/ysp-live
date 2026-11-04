@@ -4,13 +4,6 @@ CONTAINER_NAME="ysp-live"
 INSTALL_DIR="/root/ysp-live"
 PORT="8767"
 
-# 终端颜色定义
-RED='\033[1;31m'
-GREEN='\033[1;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[1;36m'
-RESET='\033[0m'
-
 # 智能获取软路由局域网 IP
 get_local_ip() {
     ip=$(uci get network.lan.ipaddr 2>/dev/null)
@@ -25,14 +18,14 @@ get_local_ip() {
 
 IP=$(get_local_ip)
 
-# 统一展示服务访问链接
+# 统一展示服务访问链接 (使用 printf 保证 OpenWrt sh 终端完美高亮)
 show_links() {
     echo ""
     echo "===================================================================="
     echo "  📌 ysp-live 服务访问与管理链接："
-    echo "   • 全频道订阅地址: ${GREEN}http://${IP}:${PORT}/all.m3u${RESET}"
-    echo "   • 系统健康度检查: ${GREEN}http://${IP}:${PORT}/health${RESET}"
-    echo "   • 实时诊断与日志: ${GREEN}http://${IP}:${PORT}/diag${RESET}"
+    printf "   • 全频道订阅地址: \033[1;32mhttp://%s:%s/all.m3u\033[0m\n" "$IP" "$PORT"
+    printf "   • 系统健康度检查: \033[1;32mhttp://%s:%s/health\033[0m\n" "$IP" "$PORT"
+    printf "   • 实时诊断与日志: \033[1;32mhttp://%s:%s/diag\033[0m\n" "$IP" "$PORT"
     echo "===================================================================="
     echo ""
 }
@@ -45,7 +38,7 @@ do_install() {
 
     # 检查 Docker 环境
     if ! command -v docker >/dev/null 2>&1; then
-        echo "${RED}[错误] 未检测到 Docker，请先在 OpenWrt/Linux 中安装 Docker。${RESET}"
+        printf "\033[1;31m[错误] 未检测到 Docker，请先在 OpenWrt/Linux 中安装 Docker。\033[0m\n"
         exit 1
     fi
 
@@ -54,7 +47,7 @@ do_install() {
     echo "[1/3] 正在从 GitHub 下载最新源码..."
     wget --no-check-certificate https://github.com/tmxk2020/ysp-live/archive/refs/heads/main.zip -O ysp-live.zip
     if [ $? -ne 0 ]; then
-        echo "${RED}[错误] 源码下载失败，请检查网络连接。${RESET}"
+        printf "\033[1;31m[错误] 源码下载失败，请检查网络连接。\033[0m\n"
         exit 1
     fi
 
@@ -66,10 +59,10 @@ do_install() {
     docker compose up -d --build
 
     if [ $? -eq 0 ]; then
-        echo "${GREEN}[3/3] ysp-live 部署成功！${RESET}"
+        printf "\033[1;32m[3/3] ysp-live 部署成功！\033[0m\n"
         show_links
     else
-        echo "${RED}[错误] 容器启动失败，请检查 Docker 日志。${RESET}"
+        printf "\033[1;31m[错误] 容器启动失败，请检查 Docker 日志。\033[0m\n"
     fi
 }
 
