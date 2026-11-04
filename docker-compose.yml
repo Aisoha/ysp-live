@@ -1,17 +1,23 @@
-version: '3.8'
-
 services:
   ysp-live:
+    image: ysp-live:9.5.1
     build:
       context: .
       dockerfile: Dockerfile
-    image: ysp-live:9.5.1
     container_name: ysp-live
-    restart: always
-    network_mode: "host"
+    restart: unless-stopped
+    network_mode: host
+    dns:
+      - 223.5.5.5      # 阿里 DNS（国内解析极快）
+      - 119.29.29.29  # 腾讯 DNS
+      - 1.1.1.1        # 国际备用
+    volumes:
+      - ./data:/app/data
     environment:
       - TZ=Asia/Shanghai
-      - NODE_OPTIONS="--max-old-space-size=256 --optimize-for-size"
+      - PYTHONUNBUFFERED=1
+      - YSP_DATA_DIR=/app/data
+      - NODE_OPTIONS="--max-old-space-size=256 --optimize-for-size"  # 优化 V8 内存与垃圾回收
     logging:
       driver: "json-file"
       options:
