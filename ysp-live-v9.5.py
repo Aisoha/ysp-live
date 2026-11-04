@@ -2958,37 +2958,11 @@ _resolver_ready :bool =False
 _resolver_lock =threading .Lock ()
 
 # ==========================================
-# 新增：按客户端 IP 的频道高码率独占锁
-# 每个频道独立计时；持锁 IP 连续 25 秒没有再次请求该频道即自动释放。
-# 值为 {频道: (持锁客户端 IP, 最近活跃时间)}。
+# 多客户端共享高码率：不再按客户端 IP 独占频道。
+# 同一频道只使用 Resolver 中缓存的上游高码率地址和播放列表，
+# 所有局域网客户端都可获取同一份高码率 HLS；TS 分片由本地代理
+# 与共享缓存分发，避免每台设备各自创建一套央视频设备会话。
 # ==========================================
-HIGH_LOCK_TIMEOUT = max(1.0, float(os.environ.get('YSP_HIGH_LOCK_TIMEOUT', '25')))
-_high_channel_locks: dict[str, tuple[str, float]] = {}
-_high_lock_guard = threading.Lock()
-
-def check_and_update_high_lock(channel: str, client_ip: str, now: float | None = None) -> bool:
-    """尝试占用/续期频道高码率锁；持锁 IP 返回 True，其他 IP 返回 False。"""
-    channel = normalize_channel(channel)
-    client_ip = str(client_ip or '').strip()
-    if not channel or not client_ip:
-        return False
-    current = time.monotonic() if now is None else float(now)
-    with _high_lock_guard:
-        held = _high_channel_locks.get(channel)
-        if held is None:
-            _high_channel_locks[channel] = (client_ip, current)
-            log(f'[{channel}] 高码率通道已由 {client_ip} 独占')
-            return True
-        owner_ip, last_seen = held
-        if current - last_seen >= HIGH_LOCK_TIMEOUT:
-            _high_channel_locks[channel] = (client_ip, current)
-            log(f'[{channel}] 原高码率锁超时释放，新设备 {client_ip} 接管')
-            return True
-        if owner_ip == client_ip:
-            _high_channel_locks[channel] = (owner_ip, current)
-            return True
-        return False
-
 def resolver_ready ()->bool :
     with _resolver_lock :
         return _resolver_ready 
@@ -3362,13 +3336,9 @@ class Handler (BaseHTTPRequestHandler ):
                     return 
                 except Exception as e :
                     log (f'[{canonical }] 时移获取失败: {e }，回退直播',min_interval =10.0 )
-            # 使用 TCP 对端 IP 作为客户端身份，避免客户端伪造 X-Forwarded-For 抢锁。
-            client_ip = self.client_address[0] if self.client_address else ''
-            high_lock_allowed = False
-            if (canonical in active_backend_channels and resolver_ready() and resolver is not None
-                    and not resolver.is_channel_in_cooldown(canonical)):
-                high_lock_allowed = check_and_update_high_lock(canonical, client_ip)
-            if canonical in active_backend_channels and resolver_ready ()and (resolver is not None )and high_lock_allowed:
+            # 同一频道允许多个局域网客户端共享高码率源。
+            # Resolver 按频道缓存上游地址/播放列表，TS 由本地代理和共享缓存分发。
+            if canonical in active_backend_channels and resolver_ready ()and (resolver is not None ):
                 if not resolver .is_channel_in_cooldown (canonical ):
                     try :
                         host =self .headers .get ('Host',f'localhost:{server_port }')
@@ -3573,7 +3543,7 @@ def main ():
         log ('[系统] 高码率模式: 仅 4K/8K 频道走设备协议 (其余走 1080p JCE/bkliveinfo)')
     else :
         active_backend_channels =set (BACKEND_CHANNELS )
-        log (f'[系统] 高码率模式: 全部 26 个高码率频道走单设备并发池 (1 台设备, 高码率并发上限: {links_limit } 路, 空闲超 {LINK_IDLE_TIMEOUT }s 释放配额, 换台防抖: {float (args .zap_debounce )}s)')
+        log (f'[系统] 高码率模式: 全部 26 个频道共用单设备协议身份，多客户端可共享同频道高码率 (频道链接配额: {links_limit } 路, 空闲超 {LINK_IDLE_TIMEOUT }s 释放配额, 换台防抖: {float (args .zap_debounce )}s)')
     engine_args =argparse .Namespace (
     host =args .bind ,port =args .port ,timeout =float (args .timeout ),insecure_tls =False ,cache_ttl =60.0 ,
     stale_while_refresh_ttl =0.0 ,refresh_error_cooldown =5.0 ,playlist_cache_ttl =2.0 ,
