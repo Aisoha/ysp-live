@@ -2,39 +2,134 @@
 
 CONTAINER_NAME="ysp-live"
 INSTALL_DIR="/root/ysp-live"
+PORT="8767"
 
-echo "========================================="
-echo "  开始检查 ysp-live 部署状态..."
-echo "========================================="
+# 终端颜色定义
+RED='\033[1;31m'
+GREEN='\033[1;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[1;36m'
+RESET='\033[0m'
 
-# 1. 智能检测：如果容器已经在运行，直接提示并退出
-if [ "$(docker ps -q -f name=${CONTAINER_NAME})" ]; then
-    echo "[提示] 检测到 ysp-live 容器已经在运行中，无需重复部署！"
-    echo "[信息] 如需强制重新部署，请先执行: docker rm -f ${CONTAINER_NAME}"
-    exit 0
+# 智能获取软路由局域网 IP
+get_local_ip() {
+    ip=$(uci get network.lan.ipaddr 2>/dev/null)
+    if [ -z "$ip" ]; then
+        ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    fi
+    if [ -z "$ip" ]; then
+        ip="localhost"
+    fi
+    echo "$ip"
+}
+
+IP=$(get_local_ip)
+
+# 统一展示服务访问链接
+show_links() {
+    echo ""
+    echo "===================================================================="
+    echo "  📌 ysp-live 服务访问与管理链接："
+    echo "   • 全频道订阅地址: ${GREEN}http://${IP}:${PORT}/all.m3u${RESET}"
+    echo "   • 系统健康度检查: ${GREEN}http://${IP}:${PORT}/health${RESET}"
+    echo "   • 实时诊断与日志: ${GREEN}http://${IP}:${PORT}/diag${RESET}"
+    echo "===================================================================="
+    echo ""
+}
+
+# 执行安装与更新核心函数
+do_install() {
+    echo "===================================================================="
+    echo "  🚀 开始部署 ysp-live..."
+    echo "===================================================================="
+
+    # 检查 Docker 环境
+    if ! command -v docker >/dev/null 2>&1; then
+        echo "${RED}[错误] 未检测到 Docker，请先在 OpenWrt/Linux 中安装 Docker。${RESET}"
+        exit 1
+    fi
+
+    mkdir -p ${INSTALL_DIR} && cd ${INSTALL_DIR}
+
+    echo "[1/3] 正在从 GitHub 下载最新源码..."
+    wget --no-check-certificate https://github.com/tmxk2020/ysp-live/archive/refs/heads/main.zip -O ysp-live.zip
+    if [ $? -ne 0 ]; then
+        echo "${RED}[错误] 源码下载失败，请检查网络连接。${RESET}"
+        exit 1
+    fi
+
+    unzip -q -o ysp-live.zip
+    cd ysp-live-main || exit 1
+
+    echo "[2/3] 清理旧容器并构建启动..."
+    docker rm -f ${CONTAINER_NAME} 2>/dev/null
+    docker compose up -d --build
+
+    if [ $? -eq 0 ]; then
+        echo "${GREEN}[3/3] ysp-live 部署成功！${RESET}"
+        show_links
+    else
+        echo "${RED}[错误] 容器启动失败，请检查 Docker 日志。${RESET}"
+    fi
+}
+
+# ==========================================
+# 主逻辑：检查容器状态并分发交互菜单
+# ==========================================
+if [ "$(docker ps -a -q -f name=${CONTAINER_NAME})" ]; then
+    echo "===================================================================="
+    echo "  检测到系统中已存在 ${CONTAINER_NAME} 容器实例"
+    echo "===================================================================="
+    echo " 请选择要执行的操作："
+    echo "   1) 📄 显示当前服务的访问与订阅链接"
+    echo "   2) 📊 查看实时运行日志 (Docker Logs)"
+    echo "   3) 🩺 本地检查系统健康度 (Health API)"
+    echo "   4) 🔄 重新安装 / 更新到最新版本 (Reinstall)"
+    echo "   5) ❌ 退出脚本"
+    echo "===================================================================="
+    printf "请输入选项编号 [1-5]: "
+    read choice
+
+    case "$choice" in
+        1)
+            show_links
+            ;;
+        2)
+            echo "正在进入实时日志流 (按 Ctrl+C 可退出日志查看)..."
+            docker logs -f ${CONTAINER_NAME}
+            ;;
+        3)
+            echo "正在请求本地健康接口..."
+            if command -v curl >/dev/null 2>&1; then
+                curl -s http://127.0.0.1:${PORT}/health
+                echo ""
+            else
+                wget -qO- http://127.0.0.1:${PORT}/health
+                echo ""
+            fi
+            ;;
+        4)
+            echo "即将开始重新安装与更新..."
+            do_install
+            ;;
+        *)
+            echo "已安全退出。"
+            exit 0
+            ;;
+    esac
+else
+    echo "===================================================================="
+    echo "  未检测到 ${CONTAINER_NAME} 运行实例"
+    echo "===================================================================="
+    printf "是否立即开始自动安装？[y/N]: "
+    read confirm
+    case "$confirm" in
+        [yY] | [yY][eE][sS])
+            do_install
+            ;;
+        *)
+            echo "已取消安装。"
+            exit 0
+            ;;
+    esac
 fi
-
-# 2. 如果容器曾经存在但停止了，或者目录不存在，开始全新部署
-echo "[提示] 未检测到正在运行的 ysp-live 实例，开始自动部署..."
-
-# 清理并创建工作目录
-rm -rf ${INSTALL_DIR}
-mkdir -p ${INSTALL_DIR} && cd ${INSTALL_DIR}
-
-# 下载最新源码
-echo "[1/3] 正在从 GitHub 下载最新源码..."
-wget --no-check-certificate https://github.com/tmxk2020/ysp-live/archive/refs/heads/main.zip -O ysp-live.zip
-unzip -q ysp-live.zip
-cd ysp-live-main
-
-#清理旧容器残留（防冲突）
-docker rm -f ${CONTAINER_NAME} 2>/dev/null
-
-# 构建并后台启动
-echo "[2/3] 正在构建 Docker 镜像并启动容器..."
-docker compose up -d --build
-
-echo "========================================="
-echo "[3/3] ysp-live 部署成功！"
-echo "访问地址: http://<你的软路由IP>:8767/all.m3u"
-echo "========================================="
