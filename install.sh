@@ -1,6 +1,6 @@
 #!/bin/sh
 
-CONTAINER_NAME="ysp-live-v9.5"
+CONTAINER_NAME="ysp-live"
 INSTALL_DIR="/root/ysp-live"
 
 echo "========================================="
