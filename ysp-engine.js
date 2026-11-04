@@ -7,7 +7,7 @@ const http = require('http');
 const https = require('https');
 const url = require('url');
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.argv[2] || process.env.PORT || 3000;
 
 // 频道映射表
 const ALIAS_MAP = {
