@@ -36,11 +36,11 @@ sh -c "$(wget -O- https://raw.githubusercontent.com/tmxk2020/ysp-live/main/insta
 ```yaml
 services:
   ysp-live:
-    image: ysp-live:9.5
+    image: ysp-live:9.5.1
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: ysp-live-v9.5
+    container_name: ysp-live
     restart: unless-stopped
     network_mode: host
     dns:
@@ -75,7 +75,7 @@ docker compose up -d --build
 - **原因**：本地已经存在同名的旧容器未清理。
 - **解决办法**：
   ```bash
-  docker rm -f ysp-live-v9.5
+  docker rm -f ysp-live
   docker compose up -d
   ```
 
