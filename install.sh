@@ -45,7 +45,8 @@ do_install() {
     mkdir -p ${INSTALL_DIR} && cd ${INSTALL_DIR}
 
     echo "[1/3] 正在从 GitHub 下载最新源码..."
-    wget --no-check-certificate https://github.fxxk.dedyn.io/https://github.com/tmxk2020/ysp-live/archive/refs/heads/main.zip -O ysp-live.zip
+    wget --no-check-certificate https://github.fxxk.dedyn.io/https://github.com/tmxk2020/ysp-live/archive/refs/heads/main.zip -O ysp-live.zip WGET_EXIT_CODE=$?
+    sleep 180
     if [ $? -ne 0 ]; then
         printf "\033[1;31m[错误] 源码下载失败，请检查网络连接。\033[0m\n"
         exit 1
